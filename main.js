@@ -1,15 +1,6 @@
-//osu Map Merging Script
-
-const readline = require('readline');
 const fs = require('fs');
 const audioProc = require('./audio.js');
-
-
-const rl = readline.createInterface({
-	input: process.stdin,
-	output: process.stdout
-});
-
+// Initialize variables
 let mapLength = [0];
 let mapContent = [];
 let metadataInput = [];
@@ -29,141 +20,217 @@ let temp = '';
 let temppos = 0;
 let queued = false;
 let audioMergeMode = false;
-//insert default combo color
 
-console.log('---osu! Compilation Map making script by NeroYuki---')
-console.log("Map count: "); 
+console.log('---osu! Compilation Map making script by NeroYuki---');
+console.log('Map count: ');
 
-rl.on('line', (input) => {
-	if (mapLimit > 0 && input == -1) {
-		mapLength = [0]
-		audioMergeMode = true;
-		rl.close();
-	}
-	else if (!count) {
-		console.log("Map length " + (count + 1) + ": "); mapLimit = input; count++; 
-	}
-	else if ((count) < mapLimit) {console.log("Map length " + (count + 1) + ": "); mapLength.push(input); count++}
-	else {
-		mapLength.push(input); console.log(mapLength); 
-		rl.close();
-	}
-});
+const args = process.argv.slice(2);
 
-rl.on('close', () => {
-	var rl2count = 0;
-	const rl2 = readline.createInterface({
-		input: process.stdin,
-		output: process.stdout
-	});
-	console.log('Title:');
-	rl2.on('line', (input) => {
-		metadataInput.push(input)
-		rl2count++;
-		switch(rl2count) {
-			case 1: console.log('Artist:'); break;
-			case 2: console.log('Creator:'); break;
-			case 3: console.log('Version:'); break;
-			case 4: console.log('HPDrainRate:'); break;
-			case 5: console.log('CircleSize:'); break;
-			case 6: console.log('OverallDifficulty:'); break;
-			case 7: console.log('ApproachRate:'); break;
-			default: rl2.close();
-		}
-	});
-	rl2.on('close', () => {
-		console.log('input done, processing...');
-		if (audioMergeMode) {
-			console.log('---Audio Merging Mode (EXPERIMENTAL)---')
-			audioProc.audio_merge(mapLimit, (song_res) => {
-				for (i in song_res) {mapLength.push(song_res[i].length)}
-				mapProcessing()
-			})
-		}
-		else mapProcessing()
-	});
-});
+// Check if audio merge mode is enabled
+if (args.includes('-audio')) {
+  audioMergeMode = true;
+}
+
+// Handle map count input
+const mapCountIndex = args.indexOf('-mapcount');
+if (mapCountIndex !== -1) {
+  const mapCount = parseInt(args[mapCountIndex + 1]);
+  if (!isNaN(mapCount)) {
+    mapLimit = mapCount;
+  } else {
+    console.log('Invalid map count');
+    process.exit(1);
+  }
+}
+
+// Handle metadata input
+const titleIndex = args.indexOf('-title');
+const artistIndex = args.indexOf('-artist');
+const creatorIndex = args.indexOf('-creator');
+const versionIndex = args.indexOf('-version');
+const hpIndex = args.indexOf('-hp');
+const csIndex = args.indexOf('-cs');
+const odIndex = args.indexOf('-od');
+const arIndex = args.indexOf('-ar');
+
+if (
+  titleIndex === -1 ||
+  artistIndex === -1 ||
+  creatorIndex === -1 ||
+  versionIndex === -1 ||
+  hpIndex === -1 ||
+  csIndex === -1 ||
+  odIndex === -1 ||
+  arIndex === -1
+) {
+  console.log('Invalid metadata input');
+  process.exit(1);
+}
+
+metadataInput.push(args[titleIndex + 1]);
+metadataInput.push(args[artistIndex + 1]);
+metadataInput.push(args[creatorIndex + 1]);
+metadataInput.push(args[versionIndex + 1]);
+metadataInput.push(args[hpIndex + 1]);
+metadataInput.push(args[csIndex + 1]);
+metadataInput.push(args[odIndex + 1]);
+metadataInput.push(args[arIndex + 1]);
+
+// Start processing
+if (audioMergeMode) {
+  console.log('---Audio Merging Mode (EXPERIMENTAL)---');
+  audioProc.audio_merge(mapLimit, (song_res) => {
+    for (const song of song_res) {
+      mapLength.push(song.length);
+    }
+    mapProcessing();
+  });
+} else {
+  mapProcessing();
+}
+
+
 
 function mapProcessing() {
-	console.log(mapLength); 
+	console.log(mapLength);
 	console.log(metadataInput);
-	fs.readFile('input/' + (imported+1) + '.osu', 'utf8', cb);		
-	function cb (err, data) {
-		if (err) throw err;
-		mapContent[imported] = data; 
-		imported++;
-		if (imported == mapLimit) breakdownMap(mapContent);
-		else fs.readFile('input/' + (imported+1) + '.osu', 'utf8', cb);
+	imported = 0; // Reset the imported counter
+	readMapFile(); // Start reading map files
+  }
+  
+  function readMapFile() {
+	if (imported === mapLimit) {
+	  breakdownMap(mapContent);
+	  return;
 	}
-}
+  
+	const filename = `input/${imported + 1}.osu`;
+	fs.readFile(filename, 'utf8', (err, data) => {
+	  if (err) {
+		console.log(`Error reading file: ${filename}`);
+		process.exit(1);
+	  }
+	  
+	  mapContent[imported] = data;
+	  imported++;
+	  mapLength.push(getMapLength(data));
+	  readMapFile();
+	});
+  }
+  
+  function getMapLength(mapData) {
+	const lines = mapData.split('\n');
+	for (const line of lines) {
+	  if (line.startsWith('SliderMultiplier:')) {
+		const sliderMultiplier = parseFloat(line.split(':')[1]);
+		if (!isNaN(sliderMultiplier)) {
+		  return 60000 / sliderMultiplier;
+		}
+	  }
+	}
+	
+	console.log(`Invalid map length for map ${imported + 1}`);
+	return NaN;
+  }
+  
 
 
 function breakdownMap(mapContent) {
-	//console.log(colorString);
 	console.log('Breaking down map...');
 	for (var j = 0; j < mapLimit; j++) {
-		leadoffset = 0;
-		offset += parseInt(mapLength[j]);
-		console.log('Map ' + (j+1) + '...');
-		var TimingArea = false;
-		var ObjectArea = false;
-		var line = mapContent[j].split('\n');
-		for (x in line) {
-			if (line[x] == '\r' || line[x].includes('[Colours]')) {TimingArea = false; ObjectArea = false; continue;}
-			else if (line[x].includes('[TimingPoints]')) {TimingArea = true; ObjectArea = false; continue;}
-			else if (line[x].includes('[HitObjects]')) {ObjectArea = true; TimingArea = false; continue;}
-			else if (line[x].includes('SliderMultiplier:')) sliderMultiplier.push(2.0 / parseFloat(line[x].split(':')[1]));
-			else if (line[x].includes('AudioLeadIn:')) leadoffset = parseFloat(line[x].split(':')[1]);
-			if (TimingArea && sliderMultiplier[j]) adjustTiming(line[x], offset, sliderMultiplier[j]);
-			if (ObjectArea) adjustObject(line[x], offset)
+	  leadoffset = 0;
+	  offset += parseInt(mapLength[j]);
+	  console.log('Map ' + (j + 1) + '...');
+	  var TimingArea = false;
+	  var ObjectArea = false;
+	  var line = mapContent[j].split('\n');
+	  for (var x = 0; x < line.length; x++) {
+		if (
+		  line[x] == '\r' ||
+		  line[x].includes('[Colours]')
+		) {
+		  TimingArea = false;
+		  ObjectArea = false;
+		  continue;
+		} else if (line[x].includes('[TimingPoints]')) {
+		  TimingArea = true;
+		  ObjectArea = false;
+		  continue;
+		} else if (line[x].includes('[HitObjects]')) {
+		  ObjectArea = true;
+		  TimingArea = false;
+		  continue;
+		} else if (line[x].includes('SliderMultiplier:')) {
+		  sliderMultiplier.push(
+			2.0 / parseFloat(line[x].split(':')[1])
+		  );
+		} else if (line[x].includes('AudioLeadIn:')) {
+		  leadoffset = parseFloat(line[x].split(':')[1]);
 		}
-		console.log('Map ' + (j+1) + ' Merged');
+		if (TimingArea && sliderMultiplier[j]) {
+		  adjustTiming(line[x], offset, sliderMultiplier[j]);
+		}
+		if (ObjectArea) {
+		  adjustObject(line[x], offset);
+		}
+	  }
+	  console.log('Map ' + (j + 1) + ' Merged');
 	}
 	mapCreate();
-}
+  }
+  
 
-function adjustTiming(line, offset, sliderMultiplier) {
-	if (Number.isNaN(parseInt(line))) return;
-	var x = line.split(',');
-	var mspb = parseFloat(x[1]);
-	var pos = parseInt(x[0]);
-	if (queued) {
-		if (temppos != pos) mergedTimeStamp.push(temp);
-		queued = false;
-	}
-	x[0] = (pos + offset).toString();
-	//console.log(pos + ' ' + npos);
-	if (parseFloat(mspb) < 0) {
-		x[1] = (mspb * sliderMultiplier).toString();
-		line = x.join();
-		mergedTimeStamp.push(line);
-	}
-	else {
-		var line_alt = line;
-		x_alt = line_alt.split(',');
-		temppos = pos;
-		x_alt[0] = (pos + offset).toString();
-		x_alt[1] = (-100 * sliderMultiplier).toString();
-		x_alt[6] = 0;
-		temp = x_alt.join();
-		queued = true;
-		line = x.join();
-		mergedTimeStamp.push(line);
-	}
-	//console.log(line)
+  function adjustTiming(line, offset, sliderMultiplier) {
+  if (Number.isNaN(parseInt(line))) return;
+
+  const values = line.split(',');
+  const pos = parseInt(values[0]);
+  const mspb = parseFloat(values[1]);
+
+  if (queued) {
+    if (temppos !== pos) mergedTimeStamp.push(temp);
+    queued = false;
+  }
+
+  const adjustedPos = pos + offset;
+  values[0] = adjustedPos.toString();
+
+  if (parseFloat(mspb) < 0) {
+    const adjustedMspb = mspb * sliderMultiplier;
+    values[1] = adjustedMspb.toString();
+    line = values.join(',');
+    mergedTimeStamp.push(line);
+  } else {
+    const lineAlt = line;
+    const xAlt = lineAlt.split(',');
+    temppos = pos;
+    xAlt[0] = adjustedPos.toString();
+    xAlt[1] = (-100 * sliderMultiplier).toString();
+    xAlt[6] = '0';
+    temp = xAlt.join(',');
+    queued = true;
+    line = values.join(',');
+    mergedTimeStamp.push(line);
+  }
 }
 
 function adjustObject(line, offset) {
-	if (Number.isNaN(parseInt(line))) return;
-	var x = line.split(',');
-	var tpos = parseInt(x[2]);
-	var type = parseInt(x[3]);
-	if (type == 12) {var epos = parseInt(x[5]); x[5] = (epos + offset).toString();}
-	x[2] = (tpos + offset).toString();
-	line = x.join();
-	//console.log(line)
-	mergedObject.push(line);
+  if (Number.isNaN(parseInt(line))) return;
+
+  const values = line.split(',');
+  const tpos = parseInt(values[2]);
+  const type = parseInt(values[3]);
+
+  if (type === 12) {
+    const epos = parseInt(values[5]);
+    values[5] = (epos + offset).toString();
+  }
+
+  values[2] = (tpos + offset).toString();
+  line = values.join(',');
+  mergedObject.push(line);
 }
+
 
 function mapCreate() {
 	initMetadata();
@@ -174,6 +241,7 @@ function mapCreate() {
 		console.log('The file has been saved!');
 	});
 }
+
 
 function initMetadata() {
 	metadataString += 'osu file format v14\r\n\r\n[General]\r\nAudioFilename: audio.mp3\r\nAudioLeadIn: 0\r\nPreviewTime: 0\r\nCountdown: 0\r\nSampleSet: Normal\r\nStackLeniency: 0.2\r\nMode: 0\r\nLetterboxInBreaks: 0\r\nWidescreenStoryboard: 1\r\n\r\n';

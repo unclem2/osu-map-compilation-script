@@ -1,5 +1,5 @@
 const ffmpeg = require("fluent-ffmpeg")
-const audioconcat = require("audioconcat-security-patched")
+const audioconcat = require("audioconcat")
 const mp3duration = require("mp3-duration")
 const Lame = require("node-lame").Lame
 
